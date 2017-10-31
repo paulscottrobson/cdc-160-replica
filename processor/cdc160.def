@@ -1,290 +1,260 @@
-
-// *********************************************************************************************
+// *************************************************************************************************
 //
-//	@C 				Code for testing @J conditions
-//	@J 				ZJ NZ PJ NJ dependent on lower 2 bits
-//	@M 				D I F B dependent on lower 2 bits.
-//	@READ() 		Reads Memory[S] into Z
-//	@WRITE() 		Write Z into Memory[S]
+//	@d 				direction (F/B) depending on bit 2
+//	@m 				Mode DIFB depending on lower 2 bits (10-57) bit 4 (60-67)
+//	@eac?			EAC for mode DIFB -> $s
+//	@jni 			Go to instruction : put $S in $P and read next instr into $Z
+//	@rott12 		Rotate t12 end around left
+//	@rni 			Read next instruction : bump $P and read next instr into $Z
+//	@zl 			(z & 0x03F)
 //
-// 	$ROTATE(A,Z)	Rotate A according to opcode Z (SHA Instruction)
+//	@add() 			Add $t12 to $a usual 12 bit one's complement.
+//	@read() 		Read Memory[$s] returns data as return value.
+//	@write() 		Write $z to Memory[$s]
 //
-//	From 10-47 indirect operations execute +1 cycle.
+//	a,p,s,z 		Standard CDC160 12 bit registers
+//	iomode 			When non zero CPU is requesting data, or requesting to send data/command.
+//	t12 			Working register used for add and rotate.
 //
-// *********************************************************************************************
+//	Notes: @RNI is added to the end of all instructions except ERR, HLT, INP, OUT, OTN, INP, EXF
+//		   and all jumps.
+//		   Data Access/Update (10-57) have an extra cycle for indirection (mod 4 == 1)
+//
+//		   To start after halt execute an @RNI as $halt stops with Z = opcode, P = address of halt
+//		   (e.g. bump P and read into Z)
+//
+// *************************************************************************************************
 
-// *********************************************************************************************
-//								1. Read next instructions
-// *********************************************************************************************
+00		1 		"err %d"
+	$halt = 1
 
-#@RNI 			$B = ($P + 1) & 07777 ; B->S ; S->P ; @READ()
+77		1 		"hlt %d"
+	$halt = 1	
 
-// *********************************************************************************************
-//								2. Jump to next instruction
-// *********************************************************************************************
+// -------------------------------------------------------------------------------------------------
 
-#@JNIF 			P + ZL -> B ; B -> S ; S -> P ; @READ()
-#@JNIB 			P - ZL -> B ; B -> S ; S -> P ; @READ()
-#@JNII 			Z -> B;B -> S;S -> P;@READ()
+01 		1 		"sha %d"
+	$t12 = $a;$a = 0
+	@rott12
+	if ($z & 0x002) { $a = $t12; }
+	@rott12;@rott12
+	if ($z & 0x008) { @add(); }
 
-// *********************************************************************************************
-//								 3. Store Contents of A
-// *********************************************************************************************
+// -------------------------------------------------------------------------------------------------
 
-#@STA 			A -> B; B -> Z; @WRITE()
+02 		1 		"lpn %d"
+	$a = $a & @zl
 
-// *********************************************************************************************
-//								4. Read operand sequences
-// *********************************************************************************************
+10-13	2 		"lp@m %@m"
+	@eac@m
+	$a = $a & $read()
 
-#@ROPDD 		ZL -> B ; B -> S ; @READ()
-#@ROPDI 		ZL -> B ; B -> S ; @READ(); Z -> B ; B -> S ; @READ()
-#@ROPDF 		P + ZL -> B ; B -> S ; @READ()
-#@ROPDB 		P - ZL -> B ; B -> S ; @READ()
-#@ROPDX 		ZL -> Z
+// -------------------------------------------------------------------------------------------------
 
-// *********************************************************************************************
-//										Shift A
-// *********************************************************************************************
+03 		1 		"lsn %d"
+	$a = $a ^ @zl
 
-01 		1	"SHA .C"		
-	(1)		$B = $ROTATE($A,$Z)
-	(2)		B -> A
-	(3) 	@RNI
+14-17	2 		"ls@m %@m"
+	@eac@m
+	$a = $a ^ $read()	
 
-// *********************************************************************************************
-//									Logical Product (AND)
-// *********************************************************************************************
+// -------------------------------------------------------------------------------------------------
 
-02 		1 	"LPN .C"
-	(1) 	@ROPDX
-	(2) 	A & Z -> B
-	(3) 	B -> A
-	(4) 	@RNI
+04 		1 		"ldn %d"
+	$a = @zl
 
-10-13	2 	"LP@M .@M"
-	(1) 	@ROPD@M
-	(2) 	A & Z -> B
-	(3) 	B -> A
-	(4) 	@RNI
+20-23	2 		"ld@m %@m"
+	@eac@m
+	$a = $read()	
 
-// *********************************************************************************************
-//								   Logical Sum (Exclusive OR)
-// *********************************************************************************************
+// -------------------------------------------------------------------------------------------------
 
-03 		1 	"LSN .C"
-	(1) 	@ROPDX
-	(2) 	A ^ Z -> B
-	(3) 	B -> A
-	(4) 	@RNI
+05 		1 		"lcn %d"
+	$a = @zl ^ 0xFFF
 
-14-17	2 	"LS@M .@M"
-	(1) 	@ROPD@M
-	(2) 	A ^ Z -> B
-	(3) 	B -> A
-	(4) 	@RNI
+24-27	2 		"lc@m %@m"
+	@eac@m
+	$a = $read() ^ 0xFFF
 
-// *********************************************************************************************
-//								   				Load
-// *********************************************************************************************
+// -------------------------------------------------------------------------------------------------
 
-04 		1 	"LDN .C"
-	(1) 	@ROPDX
-	(2) 	Z -> B
-	(3) 	B -> A
-	(4) 	@RNI
+06 		1 		"adn %d"
+	$t12 = @zl
+	@add()
 
-20-23	2 	"LD@M .@M"
-	(1) 	@ROPD@M
-	(2) 	Z -> B
-	(3) 	B -> A
-	(4) 	@RNI
+30-33	2 		"ad@m %@m"
+	@eac@m
+	$t12 = $read()
+	@add()
 
-// *********************************************************************************************
-//								   			Load Complement
-// *********************************************************************************************
+// -------------------------------------------------------------------------------------------------
 
-05 		1 	"LCN .C"
-	(1) 	@ROPDX
-	(2) 	0 - Z -> B
-	(3) 	B -> A
-	(4) 	@RNI
+07 		1 		"sbn %d"
+	$t12 = @zl ^ 0xFFF
+	@add()
 
-24-27	2 	"LC@M .@M"
-	(1) 	@ROPD@M
-	(2) 	0 - Z -> B
-	(3) 	B -> A
-	(4) 	@RNI
+34-37	2 		"sb@m %@m"
+	@eac@m
+	$t12 = $read() ^ 0xFFF
+	@add()
 
-// *********************************************************************************************
-//								   				  Add
-// *********************************************************************************************
+// -------------------------------------------------------------------------------------------------
 
-06 		1 	"ADN .C"
-	(1) 	@ROPDX
-	(2) 	A + Z -> B
-	(3) 	B -> A
-	(4) 	@RNI
+40-43 	3 		"st@m %@m"
+	@eac@m
+	$z = $a
+	@write()
 
-30-33	2 	"AD@M .@M"
-	(1) 	@ROPD@M
-	(2) 	A + Z -> B
-	(3) 	B -> A
-	(4) 	@RNI
+// -------------------------------------------------------------------------------------------------
 
-// *********************************************************************************************
-//								   			   Subtract
-// *********************************************************************************************
+44-47 	3 		"sr@m %@m"
+	@eac@m
+	$t12 = $read()
+	@rott12
+	$a = $t12
+	$z = $t12
+	@write
 
-07 		1 	"SBN .C"
-	(1) 	@ROPDX
-	(2) 	A - Z -> B
-	(3) 	B -> A
-	(4) 	@RNI
+// -------------------------------------------------------------------------------------------------
 
-34-37	2 	"SB@M .@M"
-	(1) 	@ROPD@M
-	(2) 	A - Z -> B
-	(3) 	B -> A
-	(4) 	@RNI
+50-53	3 		"ra@m %@m"
+	@eac@m
+	$t12 = $read()
+	@add()
+	$z = $a
+	@write()
 
-// *********************************************************************************************
-//												  Store
-// *********************************************************************************************
+// -------------------------------------------------------------------------------------------------
 
-40 		3 	"STD .D"
-	(1) 	ZL -> B
-	(2) 	B -> S
-	(3) 	@STA
+54-57	3 		"ao@m %@m"
+	@eac@m
+	$t12 = $read()
+	$a = 1
+	@add()
+	$z = $a
+	@write()
 
-41 		4 	"STI .I"
-	(1) 	ZL -> B
-	(2) 	B -> S
-	(3) 	@READ()
-	(4) 	Z -> B
-	(5) 	B -> S
-	(6) 	@STA
-	(7) 	@RNI
+// -------------------------------------------------------------------------------------------------
 
-42 		3 	"STF .F"
-	(1) 	P + Z -> B
-	(2) 	B -> S
-	(3) 	@STA
-	(4) 	@RNI
+60,64 	1 		"zj@m %@m"
+	@eac@m
+	if ($a == 0) { @jni; } else { @rni; }
 
-43 		3 	"STB .B"
-	(1) 	P - Z -> B
-	(2) 	B -> S
-	(3) 	@STA
-	(4) 	@RNI
+61,65 	1 		"nz@m %@m"
+	@eac@m
+	if ($a != 0) { @jni; } else { @rni; }
 
-// *********************************************************************************************
-//											Shift Replace
-// *********************************************************************************************
+62,66 	1 		"pj@m %@m"
+	@eac@m
+	if (($a & 0x800) == 0) { @jni; } else { @rni; }
 
-44-47 	3 	"SR@M @M"
-	(1)		@ROPD@M
-	(2) 	Z + Z -> B
-	(3) 	B -> Z
-	(4) 	B -> A
-	(5) 	@WRITE()
-	(6)		@RNI
+63,67 	1 		"nj@m %@m"
+	@eac@m
+	if (($a & 0x800) != 0) { @jni; } else { @rni; }
 
-// *********************************************************************************************
-//											Replace Add
-// *********************************************************************************************
+// -------------------------------------------------------------------------------------------------
 
-50-53 	3 	"RA@M @M"
-	(1) 	@ROPD@M
-	(2) 	A + Z -> B
-	(3) 	B -> A
-	(4) 	B -> Z
-	(5) 	@WRITE()
-	(6)		@RNI
+70 		2 		"jpi %i"
+	@eaci
+	@jni
 
-// *********************************************************************************************
-//										  Replace Add One
-// *********************************************************************************************
+71 		2 		"jfi %f"
+	@eacf
+	$s = $read()
+	@jni
 
-54-57 	3 	"RO@M @M"
-	(1) 	@ROPD@M
-	(2) 	1 + Z -> B
-	(3) 	B -> A
-	(4) 	B -> Z
-	(5) 	@WRITE()
-	(6)		@RNI
+// -------------------------------------------------------------------------------------------------
+//	When $iomode is non zero data transfer to an output device is needed, so the instruction should
+//	only take place if the device is able to supply (1) or accept (2,3) data. If it isn't, skip 
+//	execution for a frame.
+//
+//		1	Read from device, put in $z 	(INP,INA)
+//		2 	Write $z to device				(OUT,OTN)
+//		3 	Send $zl to device $zh 			(EXF)
+//
+//	If it is available, dispatch from $z or put in $z accordingly and execute the instruction.
+//	If there is an error state set $iomode to $FF.
+// -------------------------------------------------------------------------------------------------
 
-// *********************************************************************************************
-//											Forward Jumps
-// *********************************************************************************************
+72 		2 		"inp %f"
 
-60-63 	1 	"@JF .F"
-	(1) 	if (@C) { @JNIF(); } else { @RNI; }
+	if ($iomode == 0) {
+		@eacf 											// Step 1 : P added to E to get starting address
+		$a = $read() 									// Step 2 : Starting address in A.
+		$p = ($p + 1) & 0xFFF 							// Step 3 : P incremented to location of term address
+		$iomode = 1 									// Mode I/O = 1 input to $z
+	}
 
-// *********************************************************************************************
-//											Backward Jumps
-// *********************************************************************************************
+	else if ($imode == 1) {
+		$cycles = $cycles + 2
+		$s = $a;$write() 								// Step 4 : Store read data ($z) in address $a
+		$a = ($a + 1) & 0xFFF 							// Step 5 : Increase A by 1.
+		$s = $p 										// Step 6 : Compare Mem[P] vs A if not equal loop
+		if ($read() == $a) { $iomode = 0;@rni; } 		// 			If equal do next instruction.
+	}
 
-64-67 	1 	"@JB .B"
-	(1) 	if (@C) { @JNIB(); } else { @RNI; }
+	else if ($imode == 0xFF) {							// Error occurred.
+		$iomode = 0;@rni; 
+	}
 
-// *********************************************************************************************
-//											Indirect Jumps
-// *********************************************************************************************
+// -------------------------------------------------------------------------------------------------
 
-70 		2	"JPI .I"
-	(1) 	ZL -> B
-	(2) 	B -> S
-	(3) 	@READ()
-	(4) 	@JNII
+73 		2 		"out %f"
 
-71 		2 	"JFI .F"
-	(1) 	ZL + P -> B
-	(2) 	B -> S
-	(3) 	@READ()
-	(4) 	@JNII
+	if ($iomode == 0) {
+		@eacf 											// Step 1 : P added to E to get starting address
+		$a = $read() 									// Step 2 : Starting address in A.
+		$p = ($p + 1) & 0xFFF 							// Step 3 : P incremented to location of term address
+		$s = $a;$z = $read() 							// Step 4 : Output data obtained and sent.
+		$iomode = 2 									// Mode I/O = 2 output from $z
+	}
 
-// *********************************************************************************************
-//										Input/Output
-// *********************************************************************************************
+	else if ($imode == 2) {
+		$cycles = $cycles + 2
+		$a = ($a + 1) & 0xFFF 							// Step 5 : Increase A by 1.
+		$s = $p 										// Step 6 : Compare Mem[P] vs A if not equal loop
+		if ($read() == $a) { $iomode = 0;@rni; } 		// 			If equal do next instruction.
+		else { $s = $a;$z = $read(); } 					// Step 4 : Get output data from address A and out.
+	}
 
-//	Data transfer to/from Z on $PHASE 2 got 72-76. If PHASE=2 either XMit or wait for receive.
-// 	Error goes to $PHASE 3
+	else if ($imode == 0xFF) {							// Error occurred.
+		$iomode = 0;@rni; 
+	}
 
-72 		2 	"INP .F"
-	(1)		if ($PHASE == 0) { @ROPDF; Z -> A; P + 1 -> P; $PHASE = 2; }
-	(4)		if ($PHASE == 2) { $CYCLES += 2;A -> S;@WRITE();A + 1 -> A;P -> S;@READ();if ($Z == $A) { $PHASE = 3; }
-	(8) 	if ($PHASE == 3) { @RNI; $PHASE = 0; }
+// -------------------------------------------------------------------------------------------------
 
-73 		2 	"OUT .F"
-	(1) 	if ($PHASE == 0) { @ROPDF; Z -> A; P + 1 -> P;$PHASE = 1; }
-	(2) 	if ($PHASE == 1) { $CYCLES += 2; A -> S;@READ();$PHASE = 2; }
-	(3) 	if ($PHASE == 2) { A + 1 -> A; P -> S; @READ(); if ($Z == $A) { $PHASE = 3 }}
-	(4) 	if ($PHASE == 3) { @RNI; $PHASE = 0; }
+74 		1		"otn %d"
+	if ($iomode == 0) {
+		$z = @zl 										// Output data is ZL
+		$iomode = 2 									// Mode I/O = 2 output from $z
+	} 
+	else if ($iomode != 0) { 							// When sent, or if error occurred, clear and @rni
+		$iomode = 0;@rni; 
+	}
 
-74 		1 	"OTN .C"
-	(1) 	if ($PHASE == 0) { ZL -> Z; $PHASE = 2; }
-	(2) 	if ($PHASE == 2) { @RNI; $PHASE = 0; }
+// -------------------------------------------------------------------------------------------------
 
-75 		2 	"EXF .F"
-	(1) 	if ($PHASE == 0) { @ROPDF; $PHASE = 2; }
-	(2)		if ($PHASE == 2) { @RNI; $PHASE = 0; }
+76 		1 		"ina"
+	if ($iomode == 0) {
+		$iomode = 1 									// Mode I/O = 1 input to $z
+	} 
+	else if ($iomode == 1) { 							// When received put in $a
+		$a = $z
+		$iomode = 0;@rni; 
+	}
+	else if ($imode == 0xFF) {							// Error occurred.
+		$iomode = 0;@rni; 
+	}
 
-76 		1 	"INA"
-	(1)		if ($PHASE == 0) { $PHASE = 2; }
-	(2) 	if ($PHASE == 2) { Z -> A;@RNI;$PHASE = 0; }
+// -------------------------------------------------------------------------------------------------
 
-// *********************************************************************************************
-//											Halt / Error
-// *********************************************************************************************
+75 		1 		"exf %f"
+	if ($iomode == 0) {
+		@eacf 											// Address of function code
+		$z = $read() 									// Read function code into $Z
+		$iomode = 3 									// Mode I/O = 3 external function command $Z
+	}
+	else if ($iomode != 0) { 							// When sent, or if error occurred, clear and @rni
+		$iomode = 0;@rni; 
+	}
 
-77 		1 	"HLT .C"
-	(1) 	$HALT = 1
-
-00 		1 	"ERR .C"
-	(1) 	$HALT = 1
-
-//	This is a pseudo operation which is executed when you resume.
-
-80 		1 	"RSM .C"
-	(1) 	$HALT = 0
