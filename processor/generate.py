@@ -29,7 +29,11 @@ for l in src:
 
 	for opc in opRange:
 		assert mnemonics[opc] is None,"Duplicate "+l
-		mnemonics[opc] = m.group(3).replace("@m","difb"[opc%4])
+		atyp = opc % 4
+		if opc >= 0o60 and opc < 0o70:
+			atyp = 2 if opc < 0o64 else 3
+		mnemonics[opc] = m.group(3).replace("@m","difb"[atyp])
+		mnemonics[opc] = mnemonics[opc].replace("@n",["%d","(%d)","%f","%b"][atyp])
 		cycles = int(m.group(2))
 		code = m.group(4)
 		if opc >= 0o10 and opc < 0o60 and opc % 4 == 1:
@@ -37,12 +41,13 @@ for l in src:
 		if opc >= 0o01 and opc < 0o60:
 			code = code + ";rni()"
 		code = code + ";$cycles = $cycles + {0}".format(cycles)
-		code = code.replace("@m","difb"[opc%4])
+		code = code.replace("@m","difb"[atyp])
 		codes[opc] = code
 #
 #	Generate mnemonics
 #
-open("_cdc160_mnemonics.h","w").write("{ "+",".join(['"'+x+'"' for x in mnemonics]) + "};")
+open("_cdc160_mnemonics_old.h","w").write("{ "+",".join(['"'+x.split("/")[0]+'"' for x in mnemonics]) + "};")
+open("_cdc160_mnemonics.h","w").write("{ "+",".join(['"'+x.split("/")[1]+'"' for x in mnemonics]) + "};")
 #
 #	Generate case include
 #
@@ -87,5 +92,31 @@ h.write("protected getOpcodeList():Function() {\n return [")
 h.write(",".join(["opcode_{0:02x}".format(x) for x in range(0,256)]))
 h.write("];\n}\n")
 h.close()
-
-
+#
+#	Build mnemonic groups for assembler
+#
+instructions = {}
+for i in range(0,64):
+	for c in mnemonics[i].split("/"):
+		asm = [x.strip() for x in c.split(" ")]
+		if asm[0] not in instructions:
+			instructions[asm[0]] = {}
+		mode = asm[1].replace("#%d","#").replace("(%d)","i").replace("(%f)","g").replace("%d","d")
+		mode = mode.replace("%i","i").replace("%f","f").replace("%b","b")
+		defn = "{0}={1:02x}".format(mode,i)
+		if mode not in instructions[asm[0]]:
+			instructions[asm[0]][mode] = defn
+		else:
+			assert instructions[asm[0]][mode] == defn,defn+" "+instructions[asm[0]][mode]+" "+asm[0]
+k = [x for x in instructions.keys()]
+k.sort()
+info = {}
+for opcode in k:
+	keys = [x for x in instructions[opcode].keys()]
+	info[opcode] = ":".join([instructions[opcode][x] for x in keys])
+h = open("_cdc160_asminfo.txt","w")
+h.write('"""\n')
+for opcode in k:
+	h.write("{0} {1}\n".format(opcode,info[opcode]))
+h.write('"""\n')
+h.close()

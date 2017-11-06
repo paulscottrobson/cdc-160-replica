@@ -201,19 +201,19 @@ private opcode_2e(): void { this.eacf();this.read();this.a = 1;this.add12bit();t
 
 private opcode_2f(): void { this.eacb();this.read();this.a = 1;this.add12bit();this.z = this.a;this.write();rni();this.cycles = this.cycles + 3; };
 
-private opcode_30(): void { this.eacd();if (this.a == 0) { this.jni(); } else { this.rni(); };this.cycles = this.cycles + 1; };
+private opcode_30(): void { this.eacf();if (this.a == 0) { this.jni(); } else { this.rni(); };this.cycles = this.cycles + 1; };
 
-private opcode_31(): void { this.eaci();if (this.a != 0) { this.jni(); } else { this.rni(); };this.cycles = this.cycles + 1; };
+private opcode_31(): void { this.eacf();if (this.a != 0) { this.jni(); } else { this.rni(); };this.cycles = this.cycles + 1; };
 
 private opcode_32(): void { this.eacf();if ((this.a & 0x800) == 0) { this.jni(); } else { this.rni(); };this.cycles = this.cycles + 1; };
 
-private opcode_33(): void { this.eacb();if ((this.a & 0x800) != 0) { this.jni(); } else { this.rni(); };this.cycles = this.cycles + 1; };
+private opcode_33(): void { this.eacf();if ((this.a & 0x800) != 0) { this.jni(); } else { this.rni(); };this.cycles = this.cycles + 1; };
 
-private opcode_34(): void { this.eacd();if (this.a == 0) { this.jni(); } else { this.rni(); };this.cycles = this.cycles + 1; };
+private opcode_34(): void { this.eacb();if (this.a == 0) { this.jni(); } else { this.rni(); };this.cycles = this.cycles + 1; };
 
-private opcode_35(): void { this.eaci();if (this.a != 0) { this.jni(); } else { this.rni(); };this.cycles = this.cycles + 1; };
+private opcode_35(): void { this.eacb();if (this.a != 0) { this.jni(); } else { this.rni(); };this.cycles = this.cycles + 1; };
 
-private opcode_36(): void { this.eacf();if ((this.a & 0x800) == 0) { this.jni(); } else { this.rni(); };this.cycles = this.cycles + 1; };
+private opcode_36(): void { this.eacb();if ((this.a & 0x800) == 0) { this.jni(); } else { this.rni(); };this.cycles = this.cycles + 1; };
 
 private opcode_37(): void { this.eacb();if ((this.a & 0x800) != 0) { this.jni(); } else { this.rni(); };this.cycles = this.cycles + 1; };
 
