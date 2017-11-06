@@ -1,260 +1,218 @@
-// *************************************************************************************************
-//
-//	@d 				direction (F/B) depending on bit 2
-//	@m 				Mode DIFB depending on lower 2 bits (10-57) bit 4 (60-67)
-//	@eac?			EAC for mode DIFB -> $s
-//	@jni 			Go to instruction : put $S in $P and read next instr into $Z
-//	@rott12 		Rotate t12 end around left
-//	@rni 			Read next instruction : bump $P and read next instr into $Z
-//	@zl 			(z & 0x03F)
-//
-//	@add() 			Add $t12 to $a usual 12 bit one's complement.
-//	@read() 		Read Memory[$s] returns data as return value.
-//	@write() 		Write $z to Memory[$s]
-//
-//	a,p,s,z 		Standard CDC160 12 bit registers
-//	iomode 			When non zero CPU is requesting data, or requesting to send data/command.
-//	t12 			Working register used for add and rotate.
-//
-//	Notes: @RNI is added to the end of all instructions except ERR, HLT, INP, OUT, OTN, INP, EXF
-//		   and all jumps.
-//		   Data Access/Update (10-57) have an extra cycle for indirection (mod 4 == 1)
-//
-//		   To start after halt execute an @RNI as $halt stops with Z = opcode, P = address of halt
-//		   (e.g. bump P and read into Z)
-//
-// *************************************************************************************************
+// -------------------------------------------------------------------------------------------------
+//	@m 		expand into D,I,F,B
+//	10-47 	indirect (lower 2 bits is 01) add 1 cycle.
+//	01-57 	add $rni() to the end.
+// -------------------------------------------------------------------------------------------------
 
-00		1 		"err %d"
-	$halt = 1
+:function inline $eacd() {	
+:	$s = ($z & 0x3F);
+:}
 
-77		1 		"hlt %d"
-	$halt = 1	
+:function inline $eaci() {	
+:	$s = ($z & 0x3F);
+:	$read();
+:	$s = $z;
+:}
+
+:function inline $eacf() {	
+:	$s = ($p + ($z & 0x3F)) & 0xFFF;
+:}
+
+:function inline $eacb() {	
+:	$s = ($p - ($z & 0x3F)) & 0xFFF;
+:}
 
 // -------------------------------------------------------------------------------------------------
 
-01 		1 		"sha %d"
-	$t12 = $a;$a = 0
-	@rott12
-	if ($z & 0x002) { $a = $t12; }
-	@rott12;@rott12
-	if ($z & 0x008) { @add(); }
+:function inline $rni() {
+:	$p = ($p + 1) & 0xFFF;
+:	$read();	
+:}
+
+:function inline $jni() {
+:	$p = $s;
+:	$read();
+:}
 
 // -------------------------------------------------------------------------------------------------
 
-02 		1 		"lpn %d"
-	$a = $a & @zl
-
-10-13	2 		"lp@m %@m"
-	@eac@m
-	$a = $a & $read()
-
-// -------------------------------------------------------------------------------------------------
-
-03 		1 		"lsn %d"
-	$a = $a ^ @zl
-
-14-17	2 		"ls@m %@m"
-	@eac@m
-	$a = $a ^ $read()	
+:function inline $add12bit() {
+:	if ($z = 0xFFF) $z = 0;
+:	$a = $a + $z;
+:	if ($a & 0x1000) {
+:		$a = ($a + 1) & 0xFFF;
+:	}
+:}
 
 // -------------------------------------------------------------------------------------------------
 
-04 		1 		"ldn %d"
-	$a = @zl
+00		1 		"err %d"	$halt = 1
+77		1 		"hlt %d"	$halt = 1	
 
-20-23	2 		"ld@m %@m"
-	@eac@m
-	$a = $read()	
-
-// -------------------------------------------------------------------------------------------------
-
-05 		1 		"lcn %d"
-	$a = @zl ^ 0xFFF
-
-24-27	2 		"lc@m %@m"
-	@eac@m
-	$a = $read() ^ 0xFFF
+:function $restart() {
+:	$halt = 0;
+:	$rni();
+:}
 
 // -------------------------------------------------------------------------------------------------
 
-06 		1 		"adn %d"
-	$t12 = @zl
-	@add()
+01 		1 		"sha %d"	$shiftRoutine()
 
-30-33	2 		"ad@m %@m"
-	@eac@m
-	$t12 = $read()
-	@add()
-
-// -------------------------------------------------------------------------------------------------
-
-07 		1 		"sbn %d"
-	$t12 = @zl ^ 0xFFF
-	@add()
-
-34-37	2 		"sb@m %@m"
-	@eac@m
-	$t12 = $read() ^ 0xFFF
-	@add()
+:function $shiftRoutine() {
+:	$s = $a;$a = 0;
+:	$s = (($s << 1) | ($s >> 11)) & 0xFFF;
+:	if ($z & 0x02) {
+:		$a = $s;
+:	}
+:	$s = (($s << 1) | ($s >> 11)) & 0xFFF;
+:	$s = (($s << 1) | ($s >> 11)) & 0xFFF;
+:	if ($z & 0x08) {
+:		$z = $s;$add12bit()
+:	}
+:}
 
 // -------------------------------------------------------------------------------------------------
 
-40-43 	3 		"st@m %@m"
-	@eac@m
-	$z = $a
-	@write()
+02 		1 		"lpn %d"	$a = $a & ($z & 0x3F)
+10-13	2 		"lp@m %@m"	$eac@m();$read();$a = $a & $z
 
 // -------------------------------------------------------------------------------------------------
 
-44-47 	3 		"sr@m %@m"
-	@eac@m
-	$t12 = $read()
-	@rott12
-	$a = $t12
-	$z = $t12
-	@write
+03 		1 		"lsn %d"	$a = $a ^ ($z & 0x3F)
+14-17	2 		"ls@m %@m"	$read();$a = $a ^ $z
 
 // -------------------------------------------------------------------------------------------------
 
-50-53	3 		"ra@m %@m"
-	@eac@m
-	$t12 = $read()
-	@add()
-	$z = $a
-	@write()
+04 		1 		"ldn %d"	$a = ($z & 0x3F)
+20-23	2 		"ld@m %@m"	$eac@m();$read();$a = $z
 
 // -------------------------------------------------------------------------------------------------
 
-54-57	3 		"ao@m %@m"
-	@eac@m
-	$t12 = $read()
-	$a = 1
-	@add()
-	$z = $a
-	@write()
+05 		1 		"lcn %d"	$a = ($z & 0x3F) ^ 0xFFF
+24-27	2 		"lc@m %@m"	$eac@m();$read();$a = $z ^ 0xFFF
 
 // -------------------------------------------------------------------------------------------------
 
-60,64 	1 		"zj@m %@m"
-	@eac@m
-	if ($a == 0) { @jni; } else { @rni; }
-
-61,65 	1 		"nz@m %@m"
-	@eac@m
-	if ($a != 0) { @jni; } else { @rni; }
-
-62,66 	1 		"pj@m %@m"
-	@eac@m
-	if (($a & 0x800) == 0) { @jni; } else { @rni; }
-
-63,67 	1 		"nj@m %@m"
-	@eac@m
-	if (($a & 0x800) != 0) { @jni; } else { @rni; }
+06 		1 		"adn %d"	$z = ($z & 0x3F);$add12bit()
+30-33	2 		"ad@m %@m"	$eac@m();$read();$add12bit()
 
 // -------------------------------------------------------------------------------------------------
 
-70 		2 		"jpi %i"
-	@eaci
-	@jni
-
-71 		2 		"jfi %f"
-	@eacf
-	$s = $read()
-	@jni
-
-// -------------------------------------------------------------------------------------------------
-//	When $iomode is non zero data transfer to an output device is needed, so the instruction should
-//	only take place if the device is able to supply (1) or accept (2,3) data. If it isn't, skip 
-//	execution for a frame.
-//
-//		1	Read from device, put in $z 	(INP,INA)
-//		2 	Write $z to device				(OUT,OTN)
-//		3 	Send $zl to device $zh 			(EXF)
-//
-//	If it is available, dispatch from $z or put in $z accordingly and execute the instruction.
-//	If there is an error state set $iomode to $FF.
-// -------------------------------------------------------------------------------------------------
-
-72 		2 		"inp %f"
-
-	if ($iomode == 0) {
-		@eacf 											// Step 1 : P added to E to get starting address
-		$a = $read() 									// Step 2 : Starting address in A.
-		$p = ($p + 1) & 0xFFF 							// Step 3 : P incremented to location of term address
-		$iomode = 1 									// Mode I/O = 1 input to $z
-	}
-
-	else if ($imode == 1) {
-		$cycles = $cycles + 2
-		$s = $a;$write() 								// Step 4 : Store read data ($z) in address $a
-		$a = ($a + 1) & 0xFFF 							// Step 5 : Increase A by 1.
-		$s = $p 										// Step 6 : Compare Mem[P] vs A if not equal loop
-		if ($read() == $a) { $iomode = 0;@rni; } 		// 			If equal do next instruction.
-	}
-
-	else if ($imode == 0xFF) {							// Error occurred.
-		$iomode = 0;@rni; 
-	}
+07 		1 		"sbn %d"	$z = ($z & 0x3F) ^ 0xFFF;$add12bit()
+34-37	2 		"sb@m %@m"	$eac@m();$read();$z = $z ^ 0xFFF;$add12bit()
 
 // -------------------------------------------------------------------------------------------------
 
-73 		2 		"out %f"
-
-	if ($iomode == 0) {
-		@eacf 											// Step 1 : P added to E to get starting address
-		$a = $read() 									// Step 2 : Starting address in A.
-		$p = ($p + 1) & 0xFFF 							// Step 3 : P incremented to location of term address
-		$s = $a;$z = $read() 							// Step 4 : Output data obtained and sent.
-		$iomode = 2 									// Mode I/O = 2 output from $z
-	}
-
-	else if ($imode == 2) {
-		$cycles = $cycles + 2
-		$a = ($a + 1) & 0xFFF 							// Step 5 : Increase A by 1.
-		$s = $p 										// Step 6 : Compare Mem[P] vs A if not equal loop
-		if ($read() == $a) { $iomode = 0;@rni; } 		// 			If equal do next instruction.
-		else { $s = $a;$z = $read(); } 					// Step 4 : Get output data from address A and out.
-	}
-
-	else if ($imode == 0xFF) {							// Error occurred.
-		$iomode = 0;@rni; 
-	}
+40-43 	3 		"st@m %@m"	$eac@m();$mbr = $a;$write()
 
 // -------------------------------------------------------------------------------------------------
 
-74 		1		"otn %d"
-	if ($iomode == 0) {
-		$z = @zl 										// Output data is ZL
-		$iomode = 2 									// Mode I/O = 2 output from $z
-	} 
-	else if ($iomode != 0) { 							// When sent, or if error occurred, clear and @rni
-		$iomode = 0;@rni; 
-	}
+44-47 	3 		"sr@m %@m"	$eac@m();$read();$z = (($z << 1) | ($z >11)) & 0xFFF;$a = $z;$write()
 
 // -------------------------------------------------------------------------------------------------
 
-76 		1 		"ina"
-	if ($iomode == 0) {
-		$iomode = 1 									// Mode I/O = 1 input to $z
-	} 
-	else if ($iomode == 1) { 							// When received put in $a
-		$a = $z
-		$iomode = 0;@rni; 
-	}
-	else if ($imode == 0xFF) {							// Error occurred.
-		$iomode = 0;@rni; 
-	}
+50-53	3 		"ra@m %@m"	$eac@m();$read();$add12bit();$z = $a;$write()
 
 // -------------------------------------------------------------------------------------------------
 
-75 		1 		"exf %f"
-	if ($iomode == 0) {
-		@eacf 											// Address of function code
-		$z = $read() 									// Read function code into $Z
-		$iomode = 3 									// Mode I/O = 3 external function command $Z
-	}
-	else if ($iomode != 0) { 							// When sent, or if error occurred, clear and @rni
-		$iomode = 0;@rni; 
-	}
+54-57	3 		"ao@m %@m"	$eac@m();$read();$a = 1;$add12bit();$z = $a;$write()
+
+// -------------------------------------------------------------------------------------------------
+
+60,64 	1 		"zj@m %@m"	$eac@m();if ($a == 0) { $jni(); } else { $rni(); }
+61,65 	1 		"nz@m %@m"	$eac@m();if ($a != 0) { $jni(); } else { $rni(); }
+62,66 	1 		"pj@m %@m"	$eac@m();if (($a & 0x800) == 0) { $jni(); } else { $rni(); }
+63,67 	1 		"nj@m %@m"	$eac@m();if (($a & 0x800) != 0) { $jni(); } else { $rni(); }
+
+// -------------------------------------------------------------------------------------------------
+
+70 		2 		"jpi %i"	$eaci();$jni()
+71 		2 		"jfi %f"	$eacf();$read();$s = $z;$jni()
+
+// -------------------------------------------------------------------------------------------------
+//		I/O Functions. 
+//			$iomode = 0 running, R waiting for a word, W writing a word, F sending a function.
+//			if $ioOpcode is not zero then execute $ioOpcode not $z only when Data Available/Sent
+// -------------------------------------------------------------------------------------------------
+
+:function dataTransfer() {
+:	if ($ioMode == 0) {
+:		$ioOpcode = $z;									// Save instruction
+:		$eacf();										// Add P to E to get starting address
+:		$read();$a = $z;								// Read starting address into A.
+:		$p = ($p + 1) & 0xFFF 							// Advance P to address of last word
+:	
+:		if ($ioOpcode == $72) { 						// READ 
+:			$ioMode = 'R';								// Switch to waiting for data input.
+:		} else {										// WRITE
+:			$s = $a;$read();							// Get first word to write.
+:			$ioMode = 'W';								// Switch to waiting for output completion.
+:		}
+:	} else {											// READ available, WRITE complete.
+:		if ($ioMode == 'R') {							// Just read a word in
+:			$s = $a;$write();							// Write to memory.
+:		}
+:		$cycles = $cycles + 2;							// 2 cycles per word transferred.
+:		$a = ($a + 1) & 0xFFF;							// Advance to the next position to write.
+:		$s = $p;$read();								// Read the ending position.
+:		if ($z == $a) {									// Completed ?
+:			$dataTransferEnd();
+:		} else {
+:			if ($ioMode == 'W') {						// Not completed, if write get next word
+:				$s = $a;$read();
+:			}			
+:		}
+:	}
+:}	
+
+:function $dataTransferEnd() {
+:	$ioMode = 0;										// Allow us to break out of this 
+:	$ioOpcode = 0;										// instruction - also called on error.
+:	$rni();												// Read next instruction.
+:}
+
+72 		2 		"inp %f"	$dataTransfer()
+73 		2 		"out %f"	$dataTransfer()
+
+// -------------------------------------------------------------------------------------------------
+
+74 		1		"otn %d"	$doOTN();
+	
+:function $doOTN() {
+:	if ($ioMode == 0) {
+:		$ioOpcode = $z;									// Keep doing OTN 
+:		$ioMode = 'W';									// Writing
+:		$z = ($z & 0x3F);								// Writing this value.	
+:	} else {
+:		$dataTransferEnd(); 							// When sent, end the transfer
+:	}	
+:}
+// -------------------------------------------------------------------------------------------------
+
+76 		1 		"ina %c"	$doINA();
+
+:function $doINA() {
+:	if ($ioMode == 0) {
+:		$ioOpcode = $z;									// Keep doing INA
+:		$ioMode = 'R';									// Reading
+:	} else {
+:		$a = $z;										// Put in A register
+:		$dataTransferEnd(); 							// When received end the transfer
+:	}		
+:}
+	
+// -------------------------------------------------------------------------------------------------
+
+75 		1 		"exf %f"	$doEXF()
+
+:function $doEXF() {
+:	if ($ioMode == 0) {
+:		$ioOpcode = $z;									// Keep doing EXF
+:		$eacf();										// Where the function command is.
+:		$read();										// Read into Z.
+:		$ioMode = 'F';									// Sending external function.
+:	} else {
+:		$dataTransferEnd(); 							// When sent, end the transfer
+:	}	
+:}
 
