@@ -26,6 +26,7 @@
 
 :function inline $rni() {
 :	$p = ($p + 1) & 0xFFF;
+:	$s = $p;
 :	$read();	
 :}
 
@@ -37,7 +38,7 @@
 // -------------------------------------------------------------------------------------------------
 
 :function inline $add12bit() {
-:	if ($z = 0xFFF) $z = 0;
+:	if ($z == 0xFFF) $z = 0;
 :	$a = $a + $z;
 :	if ($a & 0x1000) {
 :		$a = ($a + 1) & 0xFFF;
@@ -67,7 +68,7 @@
 :	$s = (($s << 1) | ($s >> 11)) & 0xFFF;
 :	$s = (($s << 1) | ($s >> 11)) & 0xFFF;
 :	if ($z & 0x08) {
-:		$z = $s;$add12bit()
+:		$z = $s;$add12bit();
 :	}
 :}
 
@@ -103,7 +104,7 @@
 
 // -------------------------------------------------------------------------------------------------
 
-40-43 	3 	"st@m %@m/sta @n"	$eac@m();$mbr = $a;$write()
+40-43 	3 	"st@m %@m/sta @n"	$eac@m();$z = $a;$write()
 
 // -------------------------------------------------------------------------------------------------
 
@@ -135,12 +136,19 @@
 //			if $ioOpcode is not zero then execute $ioOpcode not $z only when Data Available/Sent
 // -------------------------------------------------------------------------------------------------
 
+:function $dataTransferEnd() {
+:	$ioMode = 0;										// Allow us to break out of this 
+:	$ioOpcode = 0;										// instruction - also called on error.
+:	$rni();												// Read next instruction.
+:}
+
+
 :function dataTransfer() {
 :	if ($ioMode == 0) {
 :		$ioOpcode = $z;									// Save instruction
 :		$eacf();										// Add P to E to get starting address
 :		$read();$a = $z;								// Read starting address into A.
-:		$p = ($p + 1) & 0xFFF 							// Advance P to address of last word
+:		$p = ($p + 1) & 0xFFF; 							// Advance P to address of last word
 :	
 :		if ($ioOpcode == $72) { 						// READ 
 :			$ioMode = 'R';								// Switch to waiting for data input.
@@ -164,12 +172,6 @@
 :		}
 :	}
 :}	
-
-:function $dataTransferEnd() {
-:	$ioMode = 0;										// Allow us to break out of this 
-:	$ioOpcode = 0;										// instruction - also called on error.
-:	$rni();												// Read next instruction.
-:}
 
 72 		2 	"inp %f/inp %f"		$dataTransfer()
 73 		2 	"out %f/out %f"		$dataTransfer()

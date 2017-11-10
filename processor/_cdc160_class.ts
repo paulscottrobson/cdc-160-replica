@@ -15,6 +15,7 @@ private this.eacb() : void {
 }
 private this.rni() : void {
  this.p = (this.p + 1) & 0xFFF;
+ this.s = this.p;
  this.read();
 }
 private this.jni() : void {
@@ -22,7 +23,7 @@ private this.jni() : void {
  this.read();
 }
 private this.add12bit() : void {
- if (this.z = 0xFFF) this.z = 0;
+ if (this.z == 0xFFF) this.z = 0;
  this.a = this.a + this.z;
  if (this.a & 0x1000) {
   this.a = (this.a + 1) & 0xFFF;
@@ -41,15 +42,20 @@ private this.shiftRoutine() : void {
  this.s = ((this.s << 1) | (this.s >> 11)) & 0xFFF;
  this.s = ((this.s << 1) | (this.s >> 11)) & 0xFFF;
  if (this.z & 0x08) {
-  this.z = this.s;this.add12bit()
+  this.z = this.s;this.add12bit();
  }
+}
+private this.dataTransferEnd() : void {
+ this.ioMode = 0;
+ this.ioOpcode = 0;
+ this.rni();
 }
 private dataTransfer() : void {
  if (this.ioMode == 0) {
   this.ioOpcode = this.z;
   this.eacf();
   this.read();this.a = this.z;
-  this.p = (this.p + 1) & 0xFFF
+  this.p = (this.p + 1) & 0xFFF;
 
   if (this.ioOpcode == this.72) {
    this.ioMode = 'R';
@@ -72,11 +78,6 @@ private dataTransfer() : void {
    }
   }
  }
-}
-private this.dataTransferEnd() : void {
- this.ioMode = 0;
- this.ioOpcode = 0;
- this.rni();
 }
 private this.doOTN() : void {
  if (this.ioMode == 0) {
@@ -169,13 +170,13 @@ private opcode_1e(): void { this.eacf();this.read();this.z = this.z ^ 0xFFF;this
 
 private opcode_1f(): void { this.eacb();this.read();this.z = this.z ^ 0xFFF;this.add12bit();rni();this.cycles = this.cycles + 2; };
 
-private opcode_20(): void { this.eacd();this.mbr = this.a;this.write();rni();this.cycles = this.cycles + 3; };
+private opcode_20(): void { this.eacd();this.z = this.a;this.write();rni();this.cycles = this.cycles + 3; };
 
-private opcode_21(): void { this.eaci();this.mbr = this.a;this.write();rni();this.cycles = this.cycles + 4; };
+private opcode_21(): void { this.eaci();this.z = this.a;this.write();rni();this.cycles = this.cycles + 4; };
 
-private opcode_22(): void { this.eacf();this.mbr = this.a;this.write();rni();this.cycles = this.cycles + 3; };
+private opcode_22(): void { this.eacf();this.z = this.a;this.write();rni();this.cycles = this.cycles + 3; };
 
-private opcode_23(): void { this.eacb();this.mbr = this.a;this.write();rni();this.cycles = this.cycles + 3; };
+private opcode_23(): void { this.eacb();this.z = this.a;this.write();rni();this.cycles = this.cycles + 3; };
 
 private opcode_24(): void { this.eacd();this.read();this.z = ((this.z << 1) | (this.z >11)) & 0xFFF;this.a = this.z;this.write();rni();this.cycles = this.cycles + 3; };
 
